@@ -178,10 +178,15 @@ class Track:
         return self.hits >= self.confirm_hits
 
     def update(self, tlbr, state):
+        self.frame_ids.append(self.frame_ids[-1]+1)
         self.bboxes.append(tlbr)
         self.state = state
 
     def add_detection(self, frame_id, tlbr, state, embedding, is_valid=True):
+        if self.frame_ids[-1] == frame_id:
+            self.frame_ids.pop()
+            self.bboxes.pop()
+
         self.frame_ids.append(frame_id)
         self.bboxes.append(tlbr)
         self.state = state

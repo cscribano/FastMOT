@@ -269,7 +269,7 @@ class MultiTracker:
                 if track.confirmed:
                     LOGGER.info(f"{'Out:':<14}{track}")
                 self._mark_lost(trk_id)
-            track.add_detection(frame_id, next_tlbr, (mean, cov), embeddings[det_id], is_valid)
+            track.add_detection(frame_id, det.tlbr, (mean, cov), embeddings[det_id], is_valid)
 
         # clean up lost tracks
         for trk_id in u_trk_ids:

@@ -132,7 +132,7 @@ class MultiTracker:
         self.flow.init(frame)
         for det in detections:
             state = self.kf.create(det.tlbr)
-            new_trk = Track(0, det.tlbr, state, det.label, self.confirm_hits)
+            new_trk = Track(0, det.tlbr, det.conf, state, det.label, self.confirm_hits)
             self.tracks[new_trk.trk_id] = new_trk
             LOGGER.debug(f"{'Detected:':<14}{new_trk}")
 
@@ -252,7 +252,7 @@ class MultiTracker:
             det = detections[det_id]
             LOGGER.info(f"{'Reidentified:':<14}{track}")
             state = self.kf.create(det.tlbr)
-            track.reinstate(frame_id, det.tlbr, state, embeddings[det_id])
+            track.reinstate(frame_id, det.tlbr, det.conf, state, embeddings[det_id])
             self.tracks[trk_id] = track
 
         # update matched tracks
@@ -269,7 +269,7 @@ class MultiTracker:
                 if track.confirmed:
                     LOGGER.info(f"{'Out:':<14}{track}")
                 self._mark_lost(trk_id)
-            track.add_detection(frame_id, next_tlbr, (mean, cov), embeddings[det_id], is_valid)
+            track.add_detection(frame_id, next_tlbr, det.conf, (mean, cov), embeddings[det_id], is_valid)
 
         # clean up lost tracks
         for trk_id in u_trk_ids:
@@ -288,7 +288,7 @@ class MultiTracker:
         for det_id in u_det_ids:
             det = detections[det_id]
             state = self.kf.create(det.tlbr)
-            new_trk = Track(frame_id, det.tlbr, state, det.label, self.confirm_hits)
+            new_trk = Track(frame_id, det.tlbr, det.conf, state, det.label, self.confirm_hits)
             self.tracks[new_trk.trk_id] = new_trk
             LOGGER.debug(f"{'Detected:':<14}{new_trk}")
 

@@ -129,11 +129,12 @@ class AverageFeature:
 class Track:
     _count = 0
 
-    def __init__(self, frame_id, tlbr, state, label, confirm_hits=1, buffer_size=30):
+    def __init__(self, frame_id, tlbr, conf, state, label, confirm_hits=1, buffer_size=30):
         self.trk_id = self.next_id()
         self.start_frame = frame_id
         self.frame_ids = deque([frame_id], maxlen=buffer_size)
         self.bboxes = deque([tlbr], maxlen=buffer_size)
+        self.confidences = deque([conf], maxlen=buffer_size)
         self.confirm_hits = confirm_hits
         self.state = state
         self.label = label
@@ -179,16 +180,19 @@ class Track:
 
     def update(self, tlbr, state):
         self.frame_ids.append(self.frame_ids[-1]+1)
+        self.confidences.append(self.confidences[-1]*0.9)
         self.bboxes.append(tlbr)
         self.state = state
 
-    def add_detection(self, frame_id, tlbr, state, embedding, is_valid=True):
+    def add_detection(self, frame_id, tlbr, conf, state, embedding, is_valid=True):
         if self.frame_ids[-1] == frame_id:
             self.frame_ids.pop()
             self.bboxes.pop()
+            self.confidences.pop()
 
         self.frame_ids.append(frame_id)
         self.bboxes.append(tlbr)
+        self.confidences.append(conf)
         self.state = state
         if is_valid:
             self.last_feat = embedding
@@ -196,10 +200,11 @@ class Track:
         self.age = 0
         self.hits += 1
 
-    def reinstate(self, frame_id, tlbr, state, embedding):
+    def reinstate(self, frame_id, tlbr, conf, state, embedding):
         self.start_frame = frame_id
         self.frame_ids.append(frame_id)
         self.bboxes.append(tlbr)
+        self.confidences.append(conf)
         self.state = state
         self.last_feat = embedding
         self.avg_feat.update(embedding)

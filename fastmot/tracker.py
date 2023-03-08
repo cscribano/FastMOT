@@ -77,7 +77,7 @@ class MultiTracker:
         self.motion_weight = motion_weight
         assert 0 <= max_assoc_cost <= 2
         self.max_assoc_cost = max_assoc_cost
-        assert 0 <= max_reid_cost <= 2
+        #assert 0 <= max_reid_cost <= 2
         self.max_reid_cost = max_reid_cost
         assert 0 <= iou_thresh <= 1
         self.iou_thresh = iou_thresh

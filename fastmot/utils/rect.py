@@ -50,12 +50,32 @@ def to_tlbr(tlwh):
     tlbr = np.empty(4)
     xmin = float(tlwh[0])
     ymin = float(tlwh[1])
+
     tlbr[0] = round(xmin, 0)
     tlbr[1] = round(ymin, 0)
     tlbr[2] = round(xmin + float(tlwh[2]) - 1., 0)
     tlbr[3] = round(ymin + float(tlwh[3]) - 1., 0)
+
     return tlbr
 
+@nb.njit(cache=True, inline='always')
+def to_tlbr_cap(tlwh, limit):
+    tlbr = np.empty(4)
+    xmin = float(tlwh[0])
+    ymin = float(tlwh[1])
+
+    tlbr[0] = round(xmin, 0)
+    tlbr[1] = round(ymin, 0)
+    tlbr[2] = round(xmin + float(tlwh[2]) - 1., 0)
+    tlbr[3] = round(ymin + float(tlwh[3]) - 1., 0)
+
+    # Clip
+    tlbr[0] = max(0, min(tlbr[0], limit[0]-1))
+    tlbr[1] = max(0, min(tlbr[1], limit[1]-1))
+    tlbr[2] = max(0, min(tlbr[2], limit[0]-1))
+    tlbr[3] = max(0, min(tlbr[3], limit[1]-1))
+
+    return tlbr
 
 @nb.njit(cache=True, inline='always')
 def intersection(tlbr1, tlbr2):

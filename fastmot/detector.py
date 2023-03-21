@@ -10,7 +10,7 @@ import cv2
 
 from . import models
 from .utils import TRTInference
-from .utils.rect import as_tlbr, aspect_ratio, to_tlbr, get_size, area
+from .utils.rect import as_tlbr, aspect_ratio, to_tlbr, to_tlbr_cap, get_size, area
 from .utils.rect import enclosing, multi_crop, iom, diou_nms
 from .utils.numba import find_split_indices
 
@@ -356,8 +356,9 @@ class YOLODetector(Detector):
 
         # create detections
         detections = []
+        limit = np.array([1280, 720])
         for i in range(len(nms_dets)):
-            tlbr = to_tlbr(nms_dets[i, :4])
+            tlbr = to_tlbr_cap(nms_dets[i, :4], limit)
             label = int(nms_dets[i, 5])
             conf = nms_dets[i, 4] * nms_dets[i, 6]
             if 0 < area(tlbr) <= max_area and aspect_ratio(tlbr) >= min_ar:

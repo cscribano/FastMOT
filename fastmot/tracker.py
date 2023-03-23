@@ -195,22 +195,33 @@ class MultiTracker:
             NxM matrix of N extracted embeddings with dimension M.
 
         """
-        u_det_ids = list(range(len(detections)))
+        track_th = 0.25
+        det_th = 0.35
+
+        det_high_ids = [i for i, d in enumerate(detections) if d.conf > track_th]
+        det_low_ids = [i for i, d in enumerate(detections) if 0.1 < d.conf <= track_th]
+
         unconfirmed = [trk_id for trk_id, track in self.tracks.items() if not track.confirmed]
         confirmed = [trk_id for trk_id, track in self.tracks.items() if track.confirmed]
 
-        # 2nd association with IoU
-        u_detections = detections[u_det_ids]
-        cost = self._iou_cost(confirmed, u_detections)
-        matches2, u_trk_ids2, u_det_ids = linear_assignment(cost, confirmed, u_det_ids)
+        # 1st association, with high score detection boxes
+        h_detections = detections[det_high_ids]
+        cost = self._iou_cost(confirmed, h_detections)
+        matches1, u_trk_ids1, u_det_ids1 = linear_assignment(cost, confirmed, det_high_ids)
+
+        # 2nd association, with low score detection boxes
+        l_detections = detections[det_low_ids]
+        cost = self._iou_cost(u_trk_ids1, l_detections)
+        matches2, u_trk_ids2, u_det_ids2 = linear_assignment(cost, u_trk_ids1, det_low_ids)
 
         # 3rd association with unconfirmed tracks
+        u_det_ids = u_det_ids1 + u_det_ids2 # itertools.chain??
         u_detections = detections[u_det_ids]
         cost = self._iou_cost(unconfirmed, u_detections)
         matches3, u_trk_ids3, u_det_ids = linear_assignment(cost, unconfirmed, u_det_ids)
 
-        matches = itertools.chain(matches2, matches3)
-        u_trk_ids = itertools.chain(u_trk_ids2, u_trk_ids3)
+        matches = itertools.chain(matches1, matches2, matches3)
+        u_trk_ids = itertools.chain(u_trk_ids1, u_trk_ids2, u_trk_ids3)
 
         # rectify matches that may cause duplicate tracks
         matches, u_trk_ids = self._rectify_matches(matches, u_trk_ids, detections)
@@ -247,6 +258,8 @@ class MultiTracker:
         # start new tracks
         for det_id in u_det_ids:
             det = detections[det_id]
+            if det.conf < det_th:
+                continue
             state = self.kf.create(det.tlbr)
             new_trk = Track(frame_id, det.tlbr, det.conf, state, det.label, self.confirm_hits)
             self.tracks[new_trk.trk_id] = new_trk

@@ -6,7 +6,6 @@ import numba as nb
 import cv2
 
 from .detector import SSDDetector, YOLODetector, PublicDetector
-from .feature_extractor import FeatureExtractor
 from .tracker import MultiTracker
 from .utils import Profiler
 from .utils.visualization import Visualizer
@@ -30,7 +29,6 @@ class MOT:
                  ssd_detector_cfg=None,
                  yolo_detector_cfg=None,
                  public_detector_cfg=None,
-                 feature_extractor_cfgs=None,
                  tracker_cfg=None,
                  visualizer_cfg=None,
                  draw=False):
@@ -53,9 +51,6 @@ class MOT:
             YOLO detector configuration.
         public_detector_cfg : SimpleNamespace, optional
             Public detector configuration.
-        feature_extractor_cfgs : List[SimpleNamespace], optional
-            Feature extractor configurations for all classes.
-            Each configuration corresponds to the class at the same index in sorted `class_ids`.
         tracker_cfg : SimpleNamespace, optional
             Tracker configuration.
         visualizer_cfg : SimpleNamespace, optional
@@ -76,14 +71,10 @@ class MOT:
             yolo_detector_cfg = SimpleNamespace()
         if public_detector_cfg is None:
             public_detector_cfg = SimpleNamespace()
-        if feature_extractor_cfgs is None:
-            feature_extractor_cfgs = (SimpleNamespace(),)
         if tracker_cfg is None:
             tracker_cfg = SimpleNamespace()
         if visualizer_cfg is None:
             visualizer_cfg = SimpleNamespace()
-        if len(feature_extractor_cfgs) != len(class_ids):
-            raise ValueError('Number of feature extractors must match length of class IDs')
 
         LOGGER.info('Loading detector model...')
         if self.detector_type == DetectorType.SSD:
@@ -95,8 +86,7 @@ class MOT:
                                            **vars(public_detector_cfg))
 
         LOGGER.info('Loading feature extractor models...')
-        self.extractors = [FeatureExtractor(**vars(cfg)) for cfg in feature_extractor_cfgs]
-        self.tracker = MultiTracker(self.size, self.extractors[0].metric, **vars(tracker_cfg))
+        self.tracker = MultiTracker(self.size, **vars(tracker_cfg))
         self.visualizer = Visualizer(**vars(visualizer_cfg))
         self.frame_count = 0
 
@@ -143,22 +133,11 @@ class MOT:
                     self.tracker.compute_flow(frame)
                 detections = self.detector.postprocess()
 
-            with Profiler('extract'):
-                cls_bboxes = self._split_bboxes_by_cls(detections.tlbr, detections.label,
-                                                       self.class_ids)
-                for extractor, bboxes in zip(self.extractors, cls_bboxes):
-                    extractor.extract_async(frame, bboxes)
-
-                with Profiler('track', aggregate=True):
-                    self.tracker.apply_kalman()
-
-                embeddings = []
-                for extractor in self.extractors:
-                    embeddings.append(extractor.postprocess())
-                embeddings = np.concatenate(embeddings) if len(embeddings) > 1 else embeddings[0]
+            with Profiler('track', aggregate=True):
+                self.tracker.apply_kalman()
 
             with Profiler('assoc'):
-                self.tracker.update(self.frame_count, detections, embeddings)
+                self.tracker.update(self.frame_count, detections)
         else:
             with Profiler('track'):
                 self.tracker.track(frame)

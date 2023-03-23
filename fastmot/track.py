@@ -141,7 +141,7 @@ class Track:
 
         self.age = 0
         self.hits = 0
-        self.avg_feat = AverageFeature()
+        #self.avg_feat = AverageFeature()
         self.last_feat = None
 
         self.inlier_ratio = 1.
@@ -184,7 +184,7 @@ class Track:
         self.bboxes.append(tlbr)
         self.state = state
 
-    def add_detection(self, frame_id, tlbr, conf, state, embedding, is_valid=True):
+    def add_detection(self, frame_id, tlbr, conf, state):
         if self.frame_ids[-1] == frame_id:
             self.frame_ids.pop()
             self.bboxes.pop()
@@ -194,20 +194,15 @@ class Track:
         self.bboxes.append(tlbr)
         self.confidences.append(conf)
         self.state = state
-        if is_valid:
-            self.last_feat = embedding
-            self.avg_feat.update(embedding)
         self.age = 0
         self.hits += 1
 
-    def reinstate(self, frame_id, tlbr, conf, state, embedding):
+    def reinstate(self, frame_id, tlbr, conf, state):
         self.start_frame = frame_id
         self.frame_ids.append(frame_id)
         self.bboxes.append(tlbr)
         self.confidences.append(conf)
         self.state = state
-        self.last_feat = embedding
-        self.avg_feat.update(embedding)
         self.age = 0
         self.keypoints = np.empty((0, 2), np.float32)
         self.prev_keypoints = np.empty((0, 2), np.float32)
@@ -227,7 +222,6 @@ class Track:
 
         if other.last_feat is not None:
             self.last_feat = other.last_feat
-        self.avg_feat.merge(other.avg_feat)
 
     @staticmethod
     def next_id():

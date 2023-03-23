@@ -16,12 +16,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 class MultiTracker:
-    def __init__(self, size, metric,
+    def __init__(self, size,
                  max_age=6,
                  age_penalty=2,
                  motion_weight=0.2,
-                 max_assoc_cost=0.9,
-                 max_reid_cost=0.45,
                  iou_thresh=0.4,
                  duplicate_thresh=0.8,
                  occlusion_thresh=0.7,
@@ -37,8 +35,6 @@ class MultiTracker:
         ----------
         size : tuple
             Width and height of each frame.
-        metric : {'euclidean', 'cosine'}
-            Feature distance metric to associate tracks.
         max_age : int, optional
             Max number of undetected frames allowed before a track is terminated.
             Note that skipped frames are not included.
@@ -46,10 +42,6 @@ class MultiTracker:
             Scale factor to penalize KLT measurements for tracks with large age.
         motion_weight : float, optional
             Weight for motion term in matching cost function.
-        max_assoc_cost : float, optional
-            Max matching cost for valid primary association.
-        max_reid_cost : float, optional
-            Max ReID feature dissimilarity for valid reidentification.
         iou_thresh : float, optional
             IoU threshold for association with unconfirmed and unmatched active tracks.
         duplicate_thresh : float, optional
@@ -68,17 +60,12 @@ class MultiTracker:
             Flow configuration.
         """
         self.size = size
-        self.metric = Metric[metric.upper()]
         assert max_age >= 1
         self.max_age = max_age
         assert age_penalty >= 1
         self.age_penalty = age_penalty
         assert 0 <= motion_weight <= 1
         self.motion_weight = motion_weight
-        assert 0 <= max_assoc_cost <= 2
-        self.max_assoc_cost = max_assoc_cost
-        #assert 0 <= max_reid_cost <= 2
-        self.max_reid_cost = max_reid_cost
         assert 0 <= iou_thresh <= 1
         self.iou_thresh = iou_thresh
         assert 0 <= duplicate_thresh <= 1
@@ -182,7 +169,7 @@ class MultiTracker:
                     LOGGER.info(f"{'Out:':<14}{track}")
                 self._mark_lost(trk_id)
 
-    def update(self, frame_id, detections, embeddings):
+    def update(self, frame_id, detections):
         """Associates detections to tracklets based on motion and feature embeddings.
 
         Parameters
@@ -191,8 +178,6 @@ class MultiTracker:
             The next frame ID.
         detections : recarray[DET_DTYPE]
             Record array of N detections.
-        embeddings : ndarray
-            NxM matrix of N extracted embeddings with dimension M.
 
         """
         track_th = 0.25
@@ -232,15 +217,13 @@ class MultiTracker:
             det = detections[det_id]
             mean, cov = self.kf.update(*track.state, det.tlbr, MeasType.DETECTOR)
             next_tlbr = as_tlbr(mean[:4])
-            is_valid = True #not occluded_det_mask[det_id]
             if track.hits == self.confirm_hits - 1:
                 LOGGER.info(f"{'Found:':<14}{track}")
-            if ios(next_tlbr, self.frame_rect) < 0.5:
-                is_valid = False
+            if ios(next_tlbr, self.frame_rect) < 0.5: #?
                 if track.confirmed:
                     LOGGER.info(f"{'Out:':<14}{track}")
                 self._mark_lost(trk_id)
-            track.add_detection(frame_id, next_tlbr, det.conf, (mean, cov), embeddings[det_id], is_valid)
+            track.add_detection(frame_id, next_tlbr, det.conf, (mean, cov))
 
         # clean up lost tracks
         for trk_id in u_trk_ids:
@@ -284,35 +267,6 @@ class MultiTracker:
                 unconfirmed.append(trk_id)
         return confirmed_by_depth, unconfirmed
 
-    def _matching_cost(self, trk_ids, detections, embeddings, occluded_dmask):
-        n_trk, n_det = len(trk_ids), len(detections)
-        if n_trk == 0 or n_det == 0:
-            return np.empty((n_trk, n_det))
-
-        features = np.empty((n_trk, embeddings.shape[1]))
-        invalid_fmask = np.zeros(n_trk, np.bool_)
-        for i, trk_id in enumerate(trk_ids):
-            track = self.tracks[trk_id]
-            if track.avg_feat.is_valid():
-                features[i, :] = track.avg_feat()
-            else:
-                invalid_fmask[i] = True
-
-        empty_mask = invalid_fmask[:, None] | occluded_dmask
-        fill_val = min(self.max_assoc_cost + 0.1, 1.)
-        cost = cdist(features, embeddings, self.metric, empty_mask, fill_val)
-
-        # fuse motion information
-        for row, trk_id in enumerate(trk_ids):
-            track = self.tracks[trk_id]
-            m_dist = self.kf.motion_distance(*track.state, detections.tlbr)
-            fuse_motion(cost[row], m_dist, self.motion_weight)
-
-        # make sure associated pair has the same class label
-        t_labels = np.fromiter((self.tracks[trk_id].label for trk_id in trk_ids), int, n_trk)
-        gate_cost(cost, t_labels, detections.label, self.max_assoc_cost)
-        return cost
-
     def _iou_cost(self, trk_ids, detections):
         n_trk, n_det = len(trk_ids), len(detections)
         if n_trk == 0 or n_det == 0:
@@ -324,19 +278,6 @@ class MultiTracker:
         iou_cost = iou_dist(t_bboxes, d_bboxes)
         gate_cost(iou_cost, t_labels, detections.label, 1. - self.iou_thresh)
         return iou_cost
-
-    def _reid_cost(self, hist_ids, detections, embeddings):
-        n_hist, n_det = len(hist_ids), len(detections)
-        if n_hist == 0 or n_det == 0:
-            return np.empty((n_hist, n_det))
-
-        features = np.concatenate([self.hist_tracks[trk_id].avg_feat()
-                                   for trk_id in hist_ids]).reshape(n_hist, -1)
-        cost = cdist(features, embeddings, self.metric)
-
-        t_labels = np.fromiter((t.label for t in self.hist_tracks.values()), int, n_hist)
-        gate_cost(cost, t_labels, detections.label)
-        return cost
 
     def _rectify_matches(self, matches, u_trk_ids, detections):
         matches, u_trk_ids = set(matches), set(u_trk_ids)
